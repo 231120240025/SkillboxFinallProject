@@ -2,29 +2,21 @@ package searchengine.services;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.model.IndexingStatus;
-import searchengine.model.Page;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 
-import java.io.IOException;
-import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.TimeUnit;
-
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
 
 @Service
 public class IndexingService {
@@ -49,21 +41,26 @@ public class IndexingService {
         return indexingInProgress;
     }
 
-    public synchronized void startFullIndexing() {
-        if (indexingInProgress) {
-            logger.warn("Попытка запустить индексацию, которая уже выполняется.");
-            throw new IllegalStateException("Индексация уже запущена.");
+    @Async
+    public void startFullIndexing() {
+        synchronized (this) {
+            if (indexingInProgress) {
+                logger.warn("Попытка запустить индексацию, которая уже выполняется.");
+                throw new IllegalStateException("Индексация уже запущена.");
+            }
+            indexingInProgress = true;
+            logger.info("Индексация начата.");
         }
-        indexingInProgress = true;
-        logger.info("Индексация начата.");
 
         try {
             performIndexing();
         } catch (Exception e) {
             logger.error("Ошибка во время индексации: ", e);
         } finally {
-            indexingInProgress = false;
-            logger.info("Индексация завершена.");
+            synchronized (this) {
+                indexingInProgress = false;
+                logger.info("Индексация завершена.");
+            }
         }
     }
 
@@ -80,20 +77,7 @@ public class IndexingService {
         if (forkJoinPool != null) {
             forkJoinPool.shutdownNow();
         }
-        updateSitesStatusToFailed("Индексация остановлена пользователем");
-    }
-
-    @Transactional
-    private void deleteSiteData(String siteUrl) {
-        searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
-        if (site != null) {
-            logger.info("Удаление данных для сайта: {}", siteUrl);
-            int pagesDeleted = pageRepository.deleteAllBySiteId(site.getId());
-            siteRepository.delete(site);
-            logger.info("Удалено {} записей из таблицы page для сайта {}.", pagesDeleted, siteUrl);
-        } else {
-            logger.info("Данные для сайта {} отсутствуют.", siteUrl);
-        }
+        updateSitesStatusToFailed();
     }
 
     private void performIndexing() {
@@ -142,90 +126,9 @@ public class IndexingService {
     private void crawlAndIndexPages(searchengine.model.Site site, String startUrl) {
         forkJoinPool = new ForkJoinPool();
         try {
-            forkJoinPool.invoke(new PageCrawler(site, startUrl, new HashSet<>()));
+            forkJoinPool.invoke(new PageCrawler(site, startUrl, new HashSet<>(), pageRepository));
         } finally {
             forkJoinPool.shutdown();
-        }
-    }
-
-    private class PageCrawler extends RecursiveAction {
-        private final searchengine.model.Site site;
-        private final String url;
-        private final Set<String> visitedUrls;
-
-        public PageCrawler(searchengine.model.Site site, String url, Set<String> visitedUrls) {
-            this.site = site;
-            this.url = url;
-            this.visitedUrls = visitedUrls;
-        }
-
-        @Override
-        protected void compute() {
-            synchronized (visitedUrls) {
-                if (visitedUrls.contains(url)) {
-                    return;
-                }
-                visitedUrls.add(url);
-            }
-
-            try {
-                // Добавляем задержку для избежания блокировки
-                long delay = 500 + new Random().nextInt(4500); // Задержка от 0.5 до 5 секунд
-                logger.info("Задержка перед запросом: {} ms для URL: {}", delay, url);
-                Thread.sleep(delay);
-
-                // Обращение с фейковым User-Agent и реферером
-                String contentType = Jsoup.connect(url)
-                        .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
-                        .referrer("http://www.google.com")
-                        .ignoreContentType(true)
-                        .execute()
-                        .contentType();
-                int statusCode = Jsoup.connect(url)
-                        .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
-                        .referrer("http://www.google.com")
-                        .ignoreContentType(true)
-                        .execute()
-                        .statusCode();
-
-                if (contentType != null && contentType.startsWith("image/")) {
-                    Page page = new Page();
-                    page.setSite(site);
-                    page.setPath(new URL(url).getPath());
-                    page.setCode(statusCode);
-                    page.setContent("Image content: " + contentType);
-                    pageRepository.save(page);
-                    logger.info("Изображение добавлено: {}", url);
-                    return;
-                }
-
-                Document document = Jsoup.connect(url)
-                        .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
-                        .referrer("http://www.google.com")
-                        .get();
-                String content = document.html();
-
-                Page page = new Page();
-                page.setSite(site);
-                page.setPath(new URL(url).getPath());
-                page.setCode(statusCode);
-                page.setContent(content);
-                pageRepository.save(page);
-
-                logger.info("Страница добавлена: {}", url);
-
-                Elements links = document.select("a[href]");
-                List<PageCrawler> subtasks = new ArrayList<>();
-                for (Element link : links) {
-                    String childUrl = link.absUrl("href");
-                    if (childUrl.startsWith(site.getUrl())) {
-                        subtasks.add(new PageCrawler(site, childUrl, visitedUrls));
-                    }
-                }
-                invokeAll(subtasks);
-            } catch (IOException | InterruptedException e) {
-                logger.error("Ошибка при обработке URL {}: {}", url, e.getMessage());
-            }
         }
     }
 
@@ -247,14 +150,27 @@ public class IndexingService {
         }
     }
 
-    private void updateSitesStatusToFailed(String errorMessage) {
+    private void updateSitesStatusToFailed() {
         List<searchengine.model.Site> sites = siteRepository.findAllByStatus(IndexingStatus.INDEXING);
         for (searchengine.model.Site site : sites) {
             site.setStatus(IndexingStatus.FAILED);
-            site.setLastError(errorMessage);
+            site.setLastError("Индексация остановлена пользователем");
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
-            logger.info("Сайт {} изменил статус на FAILED: {}", site.getUrl(), errorMessage);
+            logger.info("Сайт {} изменил статус на FAILED: {}", site.getUrl(), "Индексация остановлена пользователем");
+        }
+    }
+
+    @Transactional
+    private void deleteSiteData(String siteUrl) {
+        searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
+        if (site != null) {
+            logger.info("Удаление данных для сайта: {}", siteUrl);
+            int pagesDeleted = pageRepository.deleteAllBySiteId(site.getId());
+            siteRepository.delete(site);
+            logger.info("Удалено {} записей из таблицы page для сайта {}.", pagesDeleted, siteUrl);
+        } else {
+            logger.info("Данные для сайта {} отсутствуют.", siteUrl);
         }
     }
 }

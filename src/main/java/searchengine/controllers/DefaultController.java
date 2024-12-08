@@ -34,8 +34,7 @@ public class DefaultController {
             return ResponseEntity.badRequest().body(errorResponse);
         }
 
-        indexingService.startFullIndexing();
-
+        indexingService.startFullIndexing(); // Асинхронный вызов
         Map<String, Object> successResponse = new HashMap<>();
         successResponse.put("result", true);
         return ResponseEntity.ok(successResponse);
