@@ -9,15 +9,19 @@ import searchengine.services.IndexingService;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Controller
 public class DefaultController {
 
     private final IndexingService indexingService;
+    private final ExecutorService executorService;
 
     @Autowired
     public DefaultController(IndexingService indexingService) {
         this.indexingService = indexingService;
+        this.executorService = Executors.newSingleThreadExecutor();
     }
 
     @RequestMapping("/")
@@ -34,7 +38,9 @@ public class DefaultController {
             return ResponseEntity.badRequest().body(errorResponse);
         }
 
-        indexingService.startFullIndexing(); // Асинхронный вызов
+        // Запуск асинхронной индексации
+        executorService.submit(indexingService::startFullIndexing);
+
         Map<String, Object> successResponse = new HashMap<>();
         successResponse.put("result", true);
         return ResponseEntity.ok(successResponse);

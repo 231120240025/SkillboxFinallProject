@@ -2,7 +2,6 @@ package searchengine.services;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.Site;
@@ -41,27 +40,26 @@ public class IndexingService {
         return indexingInProgress;
     }
 
-    @Async
-    public void startFullIndexing() {
-        synchronized (this) {
-            if (indexingInProgress) {
-                logger.warn("Попытка запустить индексацию, которая уже выполняется.");
-                throw new IllegalStateException("Индексация уже запущена.");
-            }
-            indexingInProgress = true;
-            logger.info("Индексация начата.");
+    public synchronized void startFullIndexing() {
+        if (indexingInProgress) {
+            logger.warn("Попытка запустить индексацию, которая уже выполняется.");
+            throw new IllegalStateException("Индексация уже запущена.");
         }
+        indexingInProgress = true;
+        logger.info("Индексация начата.");
 
-        try {
-            performIndexing();
-        } catch (Exception e) {
-            logger.error("Ошибка во время индексации: ", e);
-        } finally {
-            synchronized (this) {
+        executorService = Executors.newSingleThreadExecutor();
+        executorService.submit(() -> {
+            try {
+                performIndexing();
+            } catch (Exception e) {
+                logger.error("Ошибка во время индексации: ", e);
+            } finally {
                 indexingInProgress = false;
                 logger.info("Индексация завершена.");
             }
-        }
+        });
+        executorService.shutdown();
     }
 
     public synchronized void stopIndexing() {
@@ -71,13 +69,15 @@ public class IndexingService {
         }
         logger.info("Остановка индексации по запросу пользователя.");
         indexingInProgress = false;
+
         if (executorService != null) {
             executorService.shutdownNow();
         }
         if (forkJoinPool != null) {
             forkJoinPool.shutdownNow();
         }
-        updateSitesStatusToFailed();
+
+        updateSitesStatusToFailed("Индексация остановлена пользователем");
     }
 
     private void performIndexing() {
@@ -101,8 +101,11 @@ public class IndexingService {
                         newSite.setStatusTime(LocalDateTime.now());
                         siteRepository.save(newSite);
                         crawlAndIndexPages(newSite, site.getUrl());
-                        updateSiteStatusToIndexed(newSite);
-                        logger.info("Сайт {} успешно проиндексирован.", site.getName());
+                        if (indexingInProgress) {
+                            updateSiteStatusToIndexed(newSite);
+                        } else {
+                            logger.warn("Индексация была прервана. Статус сайта {} не обновлен на INDEXED.", site.getName());
+                        }
                     } catch (Exception e) {
                         handleIndexingError(site.getUrl(), e);
                     }
@@ -126,9 +129,18 @@ public class IndexingService {
     private void crawlAndIndexPages(searchengine.model.Site site, String startUrl) {
         forkJoinPool = new ForkJoinPool();
         try {
-            forkJoinPool.invoke(new PageCrawler(site, startUrl, new HashSet<>(), pageRepository));
+            forkJoinPool.invoke(new PageCrawler(site, startUrl, new HashSet<>(), pageRepository, this));
         } finally {
             forkJoinPool.shutdown();
+        }
+    }
+
+    private void deleteSiteData(String siteUrl) {
+        searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
+        if (site != null) {
+            int pagesDeleted = pageRepository.deleteAllBySiteId(site.getId());
+            siteRepository.delete(site);
+            logger.info("Удалено {} записей из таблицы page для сайта {}.", pagesDeleted, siteUrl);
         }
     }
 
@@ -146,31 +158,18 @@ public class IndexingService {
             site.setLastError(e.getMessage());
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
-            logger.error("Индексация сайта {} завершилась ошибкой: {}", site.getUrl(), e.getMessage());
+            logger.error("Ошибка при индексации сайта {}: {}", site.getUrl(), e.getMessage());
         }
     }
 
-    private void updateSitesStatusToFailed() {
+    private void updateSitesStatusToFailed(String errorMessage) {
         List<searchengine.model.Site> sites = siteRepository.findAllByStatus(IndexingStatus.INDEXING);
         for (searchengine.model.Site site : sites) {
             site.setStatus(IndexingStatus.FAILED);
-            site.setLastError("Индексация остановлена пользователем");
+            site.setLastError(errorMessage);
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
-            logger.info("Сайт {} изменил статус на FAILED: {}", site.getUrl(), "Индексация остановлена пользователем");
-        }
-    }
-
-    @Transactional
-    private void deleteSiteData(String siteUrl) {
-        searchengine.model.Site site = siteRepository.findByUrl(siteUrl);
-        if (site != null) {
-            logger.info("Удаление данных для сайта: {}", siteUrl);
-            int pagesDeleted = pageRepository.deleteAllBySiteId(site.getId());
-            siteRepository.delete(site);
-            logger.info("Удалено {} записей из таблицы page для сайта {}.", pagesDeleted, siteUrl);
-        } else {
-            logger.info("Данные для сайта {} отсутствуют.", siteUrl);
+            logger.info("Сайт {} изменил статус на FAILED: {}", site.getUrl(), errorMessage);
         }
     }
 }
