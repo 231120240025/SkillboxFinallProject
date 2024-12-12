@@ -71,9 +71,16 @@ public class PageCrawler extends RecursiveAction {
     private void handleResponse(Connection.Response response) throws IOException {
         String contentType = response.contentType();
         int statusCode = response.statusCode();
+        String path = new URL(url).getPath();
+
+        if (pageRepository.existsBySiteAndPath(site, path)) {
+            logger.debug("Страница уже существует в базе данных: {}", path);
+            return;
+        }
+
         Page page = new Page();
         page.setSite(site);
-        page.setPath(new URL(url).getPath());
+        page.setPath(path);
         page.setCode(statusCode);
 
         if (contentType != null && contentType.startsWith("image/")) {
@@ -111,12 +118,16 @@ public class PageCrawler extends RecursiveAction {
 
     private void handleError(IOException e) {
         logger.warn("Ошибка обработки URL {}: {}", url, e.getMessage());
-        Page page = new Page();
-        page.setSite(site);
-        page.setPath(url);
-        page.setCode(0);
-        page.setContent("Ошибка обработки: " + e.getMessage());
-        pageRepository.save(page);
+        String path = url;
+
+        if (!pageRepository.existsBySiteAndPath(site, path)) {
+            Page page = new Page();
+            page.setSite(site);
+            page.setPath(path);
+            page.setCode(0);
+            page.setContent("Ошибка обработки: " + e.getMessage());
+            pageRepository.save(page);
+        }
     }
 
     private boolean checkAndLogStopCondition(String stage) {
