@@ -73,8 +73,9 @@ public class PageCrawler extends RecursiveAction {
         int statusCode = response.statusCode();
         String path = new URL(url).getPath();
 
-        if (pageRepository.existsBySiteAndPath(site, path)) {
-            logger.debug("Страница уже существует в базе данных: {}", path);
+        // Проверка на уникальность страницы
+        if (pageRepository.existsByPathAndSiteId(path, site.getId())) {
+            logger.info("Страница {} уже существует. Пропускаем сохранение.", url);
             return;
         }
 
@@ -106,28 +107,82 @@ public class PageCrawler extends RecursiveAction {
             if (!checkAndLogStopCondition("При обработке ссылок")) return;
 
             String childUrl = link.absUrl("href");
+
+            // Обработка JavaScript ссылок
+            if (childUrl.startsWith("javascript:")) {
+                logger.info("Обнаружена JavaScript ссылка: {}", childUrl);
+                saveJavaScriptLink(childUrl);
+                continue;
+            }
+
+            // Обработка tel: ссылок
+            if (childUrl.startsWith("tel:")) {
+                logger.info("Обнаружена телефонная ссылка: {}", childUrl);
+                savePhoneLink(childUrl);
+                continue;
+            }
+
+            String childPath = null;
+            try {
+                childPath = new URL(childUrl).getPath();
+            } catch (Exception e) {
+                logger.warn("Ошибка извлечения пути из URL: {}", childUrl);
+            }
+
             synchronized (visitedUrls) {
-                if (!visitedUrls.contains(childUrl)) {
+                if (childPath != null && !visitedUrls.contains(childPath)) {
+                    visitedUrls.add(childPath);
                     subtasks.add(new PageCrawler(site, childUrl, visitedUrls, pageRepository, indexingService));
                     logger.debug("Добавлена ссылка в обработку: {}", childUrl);
+                } else {
+                    logger.debug("Ссылка уже обработана: {}", childUrl);
                 }
             }
         }
         invokeAll(subtasks);
     }
 
+    private void savePhoneLink(String telUrl) {
+        String phoneNumber = telUrl.substring(4); // Убираем "tel:"
+        if (pageRepository.existsByPathAndSiteId(phoneNumber, site.getId())) {
+            logger.info("Телефонный номер {} уже сохранён. Пропускаем.", phoneNumber);
+            return;
+        }
+
+        Page page = new Page();
+        page.setSite(site);
+        page.setPath(phoneNumber);
+        page.setCode(0); // Код 0 для телефонных ссылок
+        page.setContent("Телефонный номер: " + phoneNumber);
+        pageRepository.save(page);
+
+        logger.info("Сохранён телефонный номер: {}", phoneNumber);
+    }
+
+    private void saveJavaScriptLink(String jsUrl) {
+        if (pageRepository.existsByPathAndSiteId(jsUrl, site.getId())) {
+            logger.info("JavaScript ссылка {} уже сохранена. Пропускаем.", jsUrl);
+            return;
+        }
+
+        Page page = new Page();
+        page.setSite(site);
+        page.setPath(jsUrl); // Сохраняем полный jsUrl как path
+        page.setCode(0); // Код 0 для JavaScript ссылок
+        page.setContent("JavaScript ссылка: " + jsUrl);
+        pageRepository.save(page);
+
+        logger.info("Сохранена JavaScript ссылка: {}", jsUrl);
+    }
+
     private void handleError(IOException e) {
         logger.warn("Ошибка обработки URL {}: {}", url, e.getMessage());
-        String path = url;
-
-        if (!pageRepository.existsBySiteAndPath(site, path)) {
-            Page page = new Page();
-            page.setSite(site);
-            page.setPath(path);
-            page.setCode(0);
-            page.setContent("Ошибка обработки: " + e.getMessage());
-            pageRepository.save(page);
-        }
+        Page page = new Page();
+        page.setSite(site);
+        page.setPath(url);
+        page.setCode(0);
+        page.setContent("Ошибка обработки: " + e.getMessage());
+        pageRepository.save(page);
     }
 
     private boolean checkAndLogStopCondition(String stage) {

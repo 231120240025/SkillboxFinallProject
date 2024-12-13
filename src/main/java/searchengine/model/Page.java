@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+import jakarta.persistence.Index;
 
 @Entity
 @Table(name = "page", indexes = {@Index(name = "idx_path", columnList = "path")})
@@ -28,4 +29,7 @@ public class Page {
 
     @Column(columnDefinition = "MEDIUMTEXT", nullable = false)
     private String content;
+
+    @Column(length = 255)
+    private String contentType; // Новый столбец для хранения типа содержимого (например, "image/png")
 }

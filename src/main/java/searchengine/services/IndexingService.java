@@ -3,10 +3,10 @@ package searchengine.services;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.model.IndexingStatus;
+import searchengine.model.Page;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 
@@ -170,6 +170,19 @@ public class IndexingService {
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
             logger.info("Сайт {} изменил статус на FAILED: {}", site.getUrl(), errorMessage);
+        }
+    }
+
+    private void savePageIfUnique(String url, String content, searchengine.model.Site site) {
+        if (pageRepository.findByPathAndSiteId(url, site.getId()).isEmpty()) {
+            Page page = new Page();
+            page.setPath(url); // Используем setPath, так как поле называется path
+            page.setContent(content);
+            page.setSite(site);
+            pageRepository.save(page);
+            logger.info("Сохранена уникальная страница: {}", url);
+        } else {
+            logger.info("Страница {} уже существует. Пропускаем сохранение.", url);
         }
     }
 }
