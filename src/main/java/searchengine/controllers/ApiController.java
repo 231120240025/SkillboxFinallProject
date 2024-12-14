@@ -1,9 +1,7 @@
 package searchengine.controllers;
 
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.services.IndexingService;
 import searchengine.services.StatisticsService;
@@ -63,5 +61,19 @@ public class ApiController {
         Map<String, Object> successResponse = new HashMap<>();
         successResponse.put("result", true);
         return ResponseEntity.ok(successResponse);
+    }
+
+    @PostMapping("/indexPage")
+    public ResponseEntity<Map<String, Object>> indexPage(@RequestParam String url) {
+        Map<String, Object> response = new HashMap<>();
+        if (!indexingService.isUrlValid(url)) {
+            response.put("result", false);
+            response.put("error", "Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
+            return ResponseEntity.badRequest().body(response);
+        }
+
+        indexingService.indexPage(url);
+        response.put("result", true);
+        return ResponseEntity.ok(response);
     }
 }

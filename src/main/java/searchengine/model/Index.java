@@ -17,11 +17,13 @@ public class Index {
     @Column(name = "id", nullable = false)
     private Integer id;
 
-    @Column(name = "page_id", nullable = false)
-    private Integer pageId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "page_id", nullable = false)
+    private Page page;
 
-    @Column(name = "lemma_id", nullable = false)
-    private Integer lemmaId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "lemma_id", nullable = false)
+    private Lemma lemma;
 
     @Column(name = "`rank`", nullable = false)
     private Float rank;

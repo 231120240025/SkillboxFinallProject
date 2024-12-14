@@ -80,6 +80,50 @@ public class IndexingService {
         updateSitesStatusToFailed("Индексация остановлена пользователем");
     }
 
+    public void indexPage(String url) {
+        logger.info("Индексация отдельной страницы: {}", url);
+
+        // Проверяем, находится ли URL в рамках указанных сайтов
+        if (!isUrlValid(url)) {
+            logger.error("URL {} находится за пределами разрешенных сайтов.", url);
+            throw new IllegalArgumentException("Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
+        }
+
+        try {
+            searchengine.model.Site site = getSiteByUrl(url);
+            if (site == null) {
+                logger.error("Сайт для URL {} не найден.", url);
+                return;
+            }
+
+            String content = fetchPageContent(url);
+            savePageIfUnique(url, content, site);
+
+        } catch (Exception e) {
+            logger.error("Ошибка индексации страницы {}: {}", url, e.getMessage());
+        }
+    }
+
+    public boolean isUrlValid(String url) {
+        return sitesList.getSites().stream()
+                .anyMatch(site -> url.startsWith(site.getUrl()));
+    }
+
+
+    private searchengine.model.Site getSiteByUrl(String url) {
+        return sitesList.getSites().stream()
+                .filter(site -> url.startsWith(site.getUrl()))
+                .map(site -> siteRepository.findByUrl(site.getUrl()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String fetchPageContent(String url) {
+        // Здесь может быть код для загрузки содержимого страницы через HTTP-запрос
+        logger.info("Загрузка содержимого страницы: {}", url);
+        return "Пример содержимого страницы."; // Заглушка
+    }
+
     private void performIndexing() {
         List<Site> sites = sitesList.getSites();
         if (sites == null || sites.isEmpty()) {
