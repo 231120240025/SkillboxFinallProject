@@ -54,10 +54,15 @@ public class Site {
         }
     }
 
-    // New helper method for updating the status and status time
+    // Helper method for updating the status, status time, and error message
     public void updateStatus(IndexingStatus newStatus, String errorMessage) {
         this.status = newStatus;
         this.statusTime = LocalDateTime.now();
         this.lastError = errorMessage;
+    }
+
+    // Helper method to check if the site is currently being indexed
+    public boolean isIndexing() {
+        return this.status == IndexingStatus.INDEXING;
     }
 }

@@ -46,14 +46,18 @@ public class LemmatizationService {
                 site = new Site();
                 site.setName(siteName);
                 site.setUrl(siteUrl);
-                siteRepository.save(site);
+                site = siteRepository.save(site); // Сохраняем новый объект
             }
 
 
             // 2. Проверить, существует ли уже запись для страницы
-            if (pageRepository.findByPathAndSiteId(url, site.getId()).isPresent()) {
-                logger.info("Страница с URL {} уже существует", url);
-                return;
+            Optional<Page> optionalPage = pageRepository.findByPathAndSiteId(url, site.getId());
+            if (optionalPage.isPresent()) {
+                // Удалить информацию о старой странице
+                Page existingPage = optionalPage.get();
+                indexRepository.deleteAllByPageId(existingPage.getId());
+                pageRepository.delete(existingPage);
+                logger.info("Удалена старая информация о странице с URL {}", url);
             }
 
             // 3. Получить HTML-код страницы
