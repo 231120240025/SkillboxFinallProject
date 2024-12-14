@@ -53,4 +53,11 @@ public class Site {
             removePage(page);
         }
     }
+
+    // New helper method for updating the status and status time
+    public void updateStatus(IndexingStatus newStatus, String errorMessage) {
+        this.status = newStatus;
+        this.statusTime = LocalDateTime.now();
+        this.lastError = errorMessage;
+    }
 }

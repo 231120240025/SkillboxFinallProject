@@ -6,12 +6,16 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import searchengine.model.Lemma;
 import searchengine.model.Page;
 import searchengine.model.Index;
+import searchengine.model.Site;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.PageRepository;
 import searchengine.repository.IndexRepository;
+import searchengine.repository.SiteRepository;
 
 import java.io.IOException;
 import java.util.*;
@@ -19,6 +23,7 @@ import java.util.*;
 @Service
 public class LemmatizationService {
 
+    private static final Logger logger = LoggerFactory.getLogger(LemmatizationService.class);
     private static final Set<String> EXCLUDED_PARTS_OF_SPEECH = Set.of("МЕЖД", "СОЮЗ", "ПРЕДЛ", "ЧАСТ");
 
     @Autowired
@@ -30,24 +35,50 @@ public class LemmatizationService {
     @Autowired
     private IndexRepository indexRepository;
 
-    public void processPage(String url) {
+    @Autowired
+    private SiteRepository siteRepository;
+
+    public void processPage(String url, String siteName, String siteUrl) {
         try {
-            // 1. Получить HTML-код страницы
-            Document document = Jsoup.connect(url).get();
+            // 1. Привязать страницу к сайту
+            Site site = siteRepository.findByUrl(siteUrl);
+            if (site == null) {
+                site = new Site();
+                site.setName(siteName);
+                site.setUrl(siteUrl);
+                siteRepository.save(site);
+            }
+
+
+            // 2. Проверить, существует ли уже запись для страницы
+            if (pageRepository.findByPathAndSiteId(url, site.getId()).isPresent()) {
+                logger.info("Страница с URL {} уже существует", url);
+                return;
+            }
+
+            // 3. Получить HTML-код страницы
+            Document document = Jsoup.connect(url)
+                    .userAgent("Mozilla/5.0 (compatible; LemmatizationService/1.0)")
+                    .timeout(10_000)
+                    .get();
             String htmlContent = document.html();
             String plainText = document.text();
 
-            // 2. Сохранить страницу в таблицу page
+            // 4. Сохранить страницу в таблицу page
             Page page = new Page();
             page.setPath(url);
             page.setContent(htmlContent);
             page.setCode(200); // HTTP status code
+            page.setSite(site);
             pageRepository.save(page);
 
-            // 3. Преобразовать текст в набор лемм и их количеств
+            // 5. Преобразовать текст в набор лемм и их количеств
             HashMap<String, Integer> lemmasWithCount = extractLemmas(plainText);
 
-            // 4. Обработать леммы
+            // 6. Обработать леммы пакетно
+            List<Lemma> lemmasToSave = new ArrayList<>();
+            List<Index> indexesToSave = new ArrayList<>();
+
             for (Map.Entry<String, Integer> entry : lemmasWithCount.entrySet()) {
                 String lemmaText = entry.getKey();
                 int count = entry.getValue();
@@ -63,21 +94,24 @@ public class LemmatizationService {
 
                 // Увеличить frequency леммы
                 lemma.setFrequency(lemma.getFrequency() + 1);
-                lemmaRepository.save(lemma);
+                lemmasToSave.add(lemma);
 
-                // Сохранить связь леммы и страницы в таблице index
+                // Создать связь леммы и страницы в таблице index
                 Index index = new Index();
                 index.setLemma(lemma);
                 index.setPage(page);
-                index.setRank((float) count); // Преобразуем int в Float
-                indexRepository.save(index);
+                index.setRank((float) count);
+                indexesToSave.add(index);
             }
 
+            lemmaRepository.saveAll(lemmasToSave);
+            indexRepository.saveAll(indexesToSave);
+
         } catch (IOException e) {
-            System.err.println("Ошибка при обработке страницы: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Ошибка при обработке страницы с URL {}: {}", url, e.getMessage(), e);
         }
     }
+
 
     private HashMap<String, Integer> extractLemmas(String text) {
         HashMap<String, Integer> lemmaCount = new HashMap<>();
@@ -88,30 +122,29 @@ public class LemmatizationService {
             // Разделяем текст на слова, убираем знаки препинания
             String[] words = text.toLowerCase().replaceAll("\\p{Punct}", "").split("\\s+");
 
-            for (String word : words) {
-                if (word.isBlank()) {
-                    continue;
-                }
+            Arrays.stream(words)
+                    .filter(word -> !word.isBlank())
+                    .forEach(word -> {
+                        try {
+                            // Получаем информацию о частях речи и фильтруем
+                            List<String> morphInfo = luceneMorph.getMorphInfo(word);
+                            boolean isExcluded = morphInfo.stream()
+                                    .anyMatch(info -> EXCLUDED_PARTS_OF_SPEECH.stream().anyMatch(info::contains));
 
-                // Получаем информацию о частях речи и фильтруем
-                List<String> morphInfo = luceneMorph.getMorphInfo(word);
-                boolean isExcluded = morphInfo.stream()
-                        .anyMatch(info -> EXCLUDED_PARTS_OF_SPEECH.stream().anyMatch(info::contains));
+                            if (isExcluded) return;
 
-                if (isExcluded) {
-                    continue;
-                }
-
-                // Получаем первую нормальную форму слова
-                List<String> normalForms = luceneMorph.getNormalForms(word);
-                if (!normalForms.isEmpty()) {
-                    String lemma = normalForms.get(0);
-                    lemmaCount.put(lemma, lemmaCount.getOrDefault(lemma, 0) + 1);
-                }
-            }
+                            // Получаем первую нормальную форму слова
+                            List<String> normalForms = luceneMorph.getNormalForms(word);
+                            if (!normalForms.isEmpty()) {
+                                String lemma = normalForms.get(0);
+                                lemmaCount.put(lemma, lemmaCount.getOrDefault(lemma, 0) + 1);
+                            }
+                        } catch (Exception e) {
+                            logger.warn("Ошибка при обработке слова {}: {}", word, e.getMessage());
+                        }
+                    });
         } catch (Exception e) {
-            System.err.println("Ошибка при обработке текста: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Ошибка при инициализации LuceneMorphology: {}", e.getMessage(), e);
         }
 
         return lemmaCount;
@@ -124,7 +157,8 @@ public class LemmatizationService {
     public static void main(String[] args) {
         String inputText = "Повторное появление леопарда в Осетии позволяет предположить, что леопард постоянно обитает в некоторых районах Северного Кавказа.";
 
-        HashMap<String, Integer> lemmasWithCount = new LemmatizationService().extractLemmas(inputText);
+        LemmatizationService service = new LemmatizationService();
+        HashMap<String, Integer> lemmasWithCount = service.extractLemmas(inputText);
 
         lemmasWithCount.forEach((lemma, count) -> System.out.println(lemma + " — " + count));
 
