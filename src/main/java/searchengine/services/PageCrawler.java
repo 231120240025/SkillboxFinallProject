@@ -108,6 +108,12 @@ public class PageCrawler extends RecursiveAction {
 
             String childUrl = link.absUrl("href");
 
+            // Проверяем, что ссылка принадлежит корневому сайту
+            if (!childUrl.startsWith(site.getUrl())) {
+                logger.debug("Ссылка {} находится за пределами корневого сайта. Пропускаем.", childUrl);
+                continue;
+            }
+
             // Обработка JavaScript ссылок
             if (childUrl.startsWith("javascript:")) {
                 logger.info("Обнаружена JavaScript ссылка: {}", childUrl);
