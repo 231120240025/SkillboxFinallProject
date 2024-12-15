@@ -1,48 +1,48 @@
 package searchengine.services;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 public class Lemmatizer {
-    private static final String MYSTEM_PATH = "C:/tools/mystem/mystem.exe"; // Windows
+
+    private static final Map<String, String> ENDINGS = new HashMap<>();
+
+    static {
+        ENDINGS.put("ами", "а");
+        ENDINGS.put("ями", "я");
+        ENDINGS.put("ов", "");
+        ENDINGS.put("ий", "ий");
+        ENDINGS.put("ых", "ый");
+        ENDINGS.put("ах", "а");
+        ENDINGS.put("ам", "а");
+        ENDINGS.put("ым", "ый");
+        ENDINGS.put("его", "ий");
+        ENDINGS.put("ого", "ой");
+    }
 
     public List<String> lemmatize(String text) {
         List<String> lemmas = new ArrayList<>();
-        try {
-            ProcessBuilder processBuilder = new ProcessBuilder(MYSTEM_PATH, "-n", "--format=json");
-            Process process = processBuilder.start();
-
-            try (OutputStream os = process.getOutputStream()) {
-                os.write(text.getBytes());
-                os.flush();
+        String[] words = text.toLowerCase().split("\\W+");
+        for (String word : words) {
+            if (!word.isEmpty()) {
+                lemmas.add(removeEnding(word));
             }
-
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    String lemma = extractLemmaFromJson(line);
-                    if (lemma != null) {
-                        lemmas.add(lemma);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
         return lemmas;
     }
 
-    private String extractLemmaFromJson(String jsonLine) {
-        // Простая обработка JSON (лучше использовать библиотеку вроде Jackson/Gson)
-        if (jsonLine.contains("\"lex\":")) {
-            int start = jsonLine.indexOf("\"lex\":") + 7;
-            int end = jsonLine.indexOf("\"", start);
-            return jsonLine.substring(start, end);
+    private String removeEnding(String word) {
+        for (Map.Entry<String, String> entry : ENDINGS.entrySet()) {
+            if (word.endsWith(entry.getKey())) {
+                return word.substring(0, word.length() - entry.getKey().length()) + entry.getValue();
+            }
         }
-        return null;
+        return word;
+    }
+
+    public static void main(String[] args) {
+        Lemmatizer lemmatizer = new Lemmatizer();
+        String text = "Привет, как дела? Сегодня мы изучаем лемматизацию слов!";
+        List<String> lemmas = lemmatizer.lemmatize(text);
+        System.out.println("Леммы: " + lemmas);
     }
 }
-

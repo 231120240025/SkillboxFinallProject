@@ -4,10 +4,9 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-import jakarta.persistence.Index;
 
 @Entity
-@Table(name = "page", indexes = {@Index(name = "idx_path", columnList = "path")})
+@Table(name = "page", indexes = {@jakarta.persistence.Index(name = "idx_path", columnList = "path")})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -15,7 +14,7 @@ public class Page {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
+    private Integer id; // Изменено с int на Integer для поддержки null
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "site_id", nullable = false)
@@ -31,5 +30,5 @@ public class Page {
     private String content;
 
     @Column(length = 255)
-    private String contentType; // Новый столбец для хранения типа содержимого (например, "image/png")
+    private String contentType; // Столбец для хранения типа содержимого (например, "image/png")
 }

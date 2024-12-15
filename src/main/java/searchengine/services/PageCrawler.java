@@ -13,6 +13,8 @@ import searchengine.repository.LemmaRepository;
 import searchengine.model.Lemma;
 import searchengine.model.Index;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import java.io.IOException;
 import java.net.URL;
@@ -232,26 +234,56 @@ public class PageCrawler extends RecursiveAction {
 
     @Transactional
     public void saveLemmas(Map<String, Integer> lemmaCount, Integer siteId) {
+        if (lemmaCount == null || lemmaCount.isEmpty()) {
+            return; // Если карта лемм пуста или null, ничего не делаем
+        }
+
+        // Загружаем существующие леммы одним запросом
+        List<String> lemmasToFind = new ArrayList<>(lemmaCount.keySet());
+        Map<String, Lemma> existingLemmas = lemmaRepository.findByLemmaInAndSiteId(lemmasToFind, siteId)
+                .stream()
+                .collect(Collectors.toMap(Lemma::getLemma, Function.identity()));
+
+        List<Lemma> lemmasToUpdate = new ArrayList<>();
+        List<Lemma> lemmasToInsert = new ArrayList<>();
+
+        // Разделение на обновляемые и новые леммы
         for (Map.Entry<String, Integer> entry : lemmaCount.entrySet()) {
             String lemma = entry.getKey();
             Integer count = entry.getValue();
 
-            Lemma existingLemma = lemmaRepository.findByLemmaAndSiteId(lemma, siteId);
-            if (existingLemma != null) {
+            if (existingLemmas.containsKey(lemma)) {
+                Lemma existingLemma = existingLemmas.get(lemma);
                 existingLemma.setFrequency(existingLemma.getFrequency() + count);
-                lemmaRepository.save(existingLemma);
+                lemmasToUpdate.add(existingLemma);
             } else {
                 Lemma newLemma = new Lemma();
                 newLemma.setLemma(lemma);
                 newLemma.setSiteId(siteId);
                 newLemma.setFrequency(count);
-                lemmaRepository.save(newLemma);
+                lemmasToInsert.add(newLemma);
             }
+        }
+
+        // Сохранение новых лемм и обновление существующих
+        if (!lemmasToInsert.isEmpty()) {
+            lemmaRepository.saveAll(lemmasToInsert);
+        }
+        if (!lemmasToUpdate.isEmpty()) {
+            lemmaRepository.saveAll(lemmasToUpdate);
         }
     }
 
+
     @Transactional
     public void saveIndexData(Page page, Map<String, Integer> lemmaCount) {
+        // Убедитесь, что объект Page сохранён
+        if (page.getId() == null) {
+            page = pageRepository.saveAndFlush(page);
+        }
+
+        List<Index> indices = new ArrayList<>();
+
         for (Map.Entry<String, Integer> entry : lemmaCount.entrySet()) {
             String lemma = entry.getKey();
             Integer count = entry.getValue();
@@ -262,11 +294,12 @@ public class PageCrawler extends RecursiveAction {
                 index.setPage(page);
                 index.setLemma(lemmaEntity);
                 index.setRank(count.floatValue());
-                indexRepository.save(index);
+                indices.add(index);
             }
         }
-    }
 
+        indexRepository.saveAll(indices);
+    }
 
 
 }
