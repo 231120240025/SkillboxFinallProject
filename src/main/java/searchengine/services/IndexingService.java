@@ -9,6 +9,8 @@ import searchengine.model.IndexingStatus;
 import searchengine.model.Page;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
+import searchengine.repository.IndexRepository;
+import searchengine.repository.LemmaRepository;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -25,15 +27,20 @@ public class IndexingService {
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
+    private final LemmaRepository lemmaRepository;
+    private final IndexRepository indexRepository;
 
     private volatile boolean indexingInProgress = false;
     private ExecutorService executorService;
     private ForkJoinPool forkJoinPool;
 
-    public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository) {
+    public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository, LemmaRepository lemmaRepository,
+                           IndexRepository indexRepository) {
         this.sitesList = sitesList;
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
+        this.lemmaRepository = lemmaRepository;
+        this.indexRepository = indexRepository;
     }
 
     public synchronized boolean isIndexingInProgress() {
@@ -173,11 +180,12 @@ public class IndexingService {
     private void crawlAndIndexPages(searchengine.model.Site site, String startUrl) {
         forkJoinPool = new ForkJoinPool();
         try {
-            forkJoinPool.invoke(new PageCrawler(site, startUrl, new HashSet<>(), pageRepository, this));
+            forkJoinPool.invoke(new PageCrawler(site, startUrl, new HashSet<>(), pageRepository, this, lemmaRepository, indexRepository));
         } finally {
             forkJoinPool.shutdown();
         }
     }
+
 
     private void deleteSiteData(String siteUrl) {
         searchengine.model.Site site = siteRepository.findByUrl(siteUrl);

@@ -8,6 +8,11 @@ import org.jsoup.select.Elements;
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.repository.PageRepository;
+import searchengine.repository.IndexRepository;
+import searchengine.repository.LemmaRepository;
+import searchengine.model.Lemma;
+import searchengine.model.Index;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.net.URL;
@@ -23,14 +28,22 @@ public class PageCrawler extends RecursiveAction {
     private final Set<String> visitedUrls;
     private final PageRepository pageRepository;
     private final IndexingService indexingService;
+    private final LemmaRepository lemmaRepository;
+    private final IndexRepository indexRepository;
 
-    public PageCrawler(Site site, String url, Set<String> visitedUrls, PageRepository pageRepository, IndexingService indexingService) {
+
+    public PageCrawler(Site site, String url, Set<String> visitedUrls, PageRepository pageRepository,
+                       IndexingService indexingService, LemmaRepository lemmaRepository,
+                       IndexRepository indexRepository) {
         this.site = site;
         this.url = url;
         this.visitedUrls = visitedUrls;
         this.pageRepository = pageRepository;
         this.indexingService = indexingService;
+        this.lemmaRepository = lemmaRepository;
+        this.indexRepository = indexRepository;
     }
+
 
     @Override
     protected void compute() {
@@ -73,7 +86,6 @@ public class PageCrawler extends RecursiveAction {
         int statusCode = response.statusCode();
         String path = new URL(url).getPath();
 
-        // Проверка на уникальность страницы
         if (pageRepository.existsByPathAndSiteId(path, site.getId())) {
             logger.info("Страница {} уже существует. Пропускаем сохранение.", url);
             return;
@@ -84,14 +96,17 @@ public class PageCrawler extends RecursiveAction {
         page.setPath(path);
         page.setCode(statusCode);
 
-        if (contentType != null && contentType.startsWith("image/")) {
-            page.setContent("Image content: " + contentType);
-            logger.info("Изображение добавлено: {}", url);
-        } else if (contentType != null && contentType.contains("text/html")) {
+        if (contentType != null && contentType.contains("text/html")) {
             Document document = response.parse();
             page.setContent(document.html());
             logger.info("HTML-страница добавлена: {}", url);
             processLinks(document);
+
+            // Анализ текста и сохранение данных
+            String text = document.body().text(); // Извлечение текста
+            Map<String, Integer> lemmaCount = extractLemmas(text);
+            saveLemmas(lemmaCount, site.getId());
+            saveIndexData(page, lemmaCount);
         } else {
             page.setContent("Unhandled content type: " + contentType);
             logger.info("Контент с неизвестным типом добавлен: {}", url);
@@ -99,6 +114,7 @@ public class PageCrawler extends RecursiveAction {
 
         pageRepository.save(page);
     }
+
 
     private void processLinks(Document document) {
         Elements links = document.select("a[href]");
@@ -138,12 +154,14 @@ public class PageCrawler extends RecursiveAction {
             synchronized (visitedUrls) {
                 if (childPath != null && !visitedUrls.contains(childPath)) {
                     visitedUrls.add(childPath);
-                    subtasks.add(new PageCrawler(site, childUrl, visitedUrls, pageRepository, indexingService));
+                    subtasks.add(new PageCrawler(site, childUrl, visitedUrls, pageRepository,
+                            indexingService, lemmaRepository, indexRepository));
                     logger.debug("Добавлена ссылка в обработку: {}", childUrl);
                 } else {
                     logger.debug("Ссылка уже обработана: {}", childUrl);
                 }
             }
+
         }
         invokeAll(subtasks);
     }
@@ -198,4 +216,57 @@ public class PageCrawler extends RecursiveAction {
         }
         return true;
     }
+
+    public Map<String, Integer> extractLemmas(String text) {
+        // Предположим, используется внешний лемматизатор
+        Lemmatizer lemmatizer = new Lemmatizer();
+        Map<String, Integer> lemmaCount = new HashMap<>();
+        List<String> lemmas = lemmatizer.lemmatize(text);
+
+        for (String lemma : lemmas) {
+            lemmaCount.put(lemma, lemmaCount.getOrDefault(lemma, 0) + 1);
+        }
+
+        return lemmaCount;
+    }
+
+    @Transactional
+    public void saveLemmas(Map<String, Integer> lemmaCount, Integer siteId) {
+        for (Map.Entry<String, Integer> entry : lemmaCount.entrySet()) {
+            String lemma = entry.getKey();
+            Integer count = entry.getValue();
+
+            Lemma existingLemma = lemmaRepository.findByLemmaAndSiteId(lemma, siteId);
+            if (existingLemma != null) {
+                existingLemma.setFrequency(existingLemma.getFrequency() + count);
+                lemmaRepository.save(existingLemma);
+            } else {
+                Lemma newLemma = new Lemma();
+                newLemma.setLemma(lemma);
+                newLemma.setSiteId(siteId);
+                newLemma.setFrequency(count);
+                lemmaRepository.save(newLemma);
+            }
+        }
+    }
+
+    @Transactional
+    public void saveIndexData(Page page, Map<String, Integer> lemmaCount) {
+        for (Map.Entry<String, Integer> entry : lemmaCount.entrySet()) {
+            String lemma = entry.getKey();
+            Integer count = entry.getValue();
+
+            Lemma lemmaEntity = lemmaRepository.findByLemmaAndSiteId(lemma, page.getSite().getId());
+            if (lemmaEntity != null) {
+                Index index = new Index();
+                index.setPage(page);
+                index.setLemma(lemmaEntity);
+                index.setRank(count.floatValue());
+                indexRepository.save(index);
+            }
+        }
+    }
+
+
+
 }

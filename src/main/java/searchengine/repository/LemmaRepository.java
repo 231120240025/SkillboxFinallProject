@@ -10,4 +10,5 @@ import java.util.Optional;
 public interface LemmaRepository extends JpaRepository<Lemma, Integer> {
     // Поиск леммы по тексту
     Optional<Lemma> findByLemma(String lemma);
+    Lemma findByLemmaAndSiteId(String lemma, Integer siteId);
 }
