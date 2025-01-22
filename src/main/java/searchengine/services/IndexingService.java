@@ -83,7 +83,7 @@ public class IndexingService {
 
 
     private void performIndexing() {
-        List<searchengine.config.Site> sites = sitesList.getSites();
+        List<searchengine.config.ConfigSite> sites = sitesList.getSites();
         if (sites == null || sites.isEmpty()) {
             logger.warn("Список сайтов для индексации пуст.");
             return;
@@ -91,7 +91,7 @@ public class IndexingService {
 
         executorService = Executors.newFixedThreadPool(sites.size());
         try {
-            for (searchengine.config.Site site : sites) {
+            for (searchengine.config.ConfigSite site : sites) {
                 executorService.submit(() -> {
                     logger.info("Индексация сайта: {} ({})", site.getName(), site.getUrl());
                     try {

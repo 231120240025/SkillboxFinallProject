@@ -70,12 +70,6 @@ public class ApiController {
         return ResponseEntity.ok(successResponse);
     }
 
-
-
-
-
-
-
     @PostMapping(value = "/indexPage", consumes = "application/x-www-form-urlencoded")
     public ResponseEntity<Map<String, Object>> indexPage(@RequestParam String url) {
         if (url == null || url.isEmpty()) {
@@ -104,12 +98,4 @@ public class ApiController {
             return ResponseEntity.status(500).body(errorResponse);
         }
     }
-
-
-
-
-
-
-
-
 }
