@@ -6,13 +6,8 @@ import org.springframework.stereotype.Service;
 
 import searchengine.config.SitesList;
 import searchengine.model.IndexingStatus;
-import searchengine.model.Page;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
@@ -86,52 +81,6 @@ public class IndexingService {
         updateSitesStatusToFailed("Индексация остановлена пользователем");
     }
 
-    public void indexPage(String url) {
-        logger.info("Индексация отдельной страницы: {}", url);
-
-        // Проверяем, находится ли URL в рамках указанных сайтов
-        if (!isUrlValid(url)) {
-            logger.error("URL {} находится за пределами разрешенных сайтов.", url);
-            throw new IllegalArgumentException("Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
-        }
-
-        try {
-            searchengine.model.Site site = getSiteByUrl(url);
-            if (site == null) {
-                logger.error("Сайт для URL {} не найден.", url);
-                return;
-            }
-
-            String content = fetchPageContent(url);
-            savePageIfUnique(url, content, site);
-
-        } catch (Exception e) {
-            logger.error("Ошибка индексации страницы {}: {}", url, e.getMessage());
-        }
-    }
-
-    public boolean isUrlValid(String url) {
-        return sitesList.getSites().stream()
-                .anyMatch(site -> url.startsWith(site.getUrl()));
-    }
-
-    public synchronized boolean isIndexingComplete() {
-        return !indexingInProgress;
-    }
-
-    private searchengine.model.Site getSiteByUrl(String url) {
-        return sitesList.getSites().stream()
-                .filter(site -> url.startsWith(site.getUrl()))
-                .map(site -> siteRepository.findByUrl(site.getUrl()))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private String fetchPageContent(String url) {
-        // Здесь может быть код для загрузки содержимого страницы через HTTP-запрос
-        logger.info("Загрузка содержимого страницы: {}", url);
-        return "Пример содержимого страницы."; // Заглушка
-    }
 
     private void performIndexing() {
         List<searchengine.config.Site> sites = sitesList.getSites();
@@ -224,34 +173,5 @@ public class IndexingService {
             siteRepository.save(site);
             logger.info("Сайт {} изменил статус на FAILED: {}", site.getUrl(), errorMessage);
         }
-    }
-
-    private void savePageIfUnique(String url, String content, searchengine.model.Site site) {
-        Optional<Page> existingPage = pageRepository.findByPathAndSiteId(url, site.getId());
-        if (existingPage.isEmpty()) {
-            Page page = new Page();
-            page.setPath(url);
-            page.setContent(content);
-            page.setSite(site);
-            Page savedPage = pageRepository.save(page);
-            logger.info("Сохранена уникальная страница: {}", url);
-
-
-        } else {
-            logger.info("Страница {} уже существует. Пропускаем сохранение.", url);
-        }
-    }
-
-    public Set<String> getIndexedSites() {
-        // Получаем список сайтов из базы данных, которые были проиндексированы
-        List<searchengine.model.Site> indexedSites = siteRepository.findAllByStatus(IndexingStatus.INDEXED);
-
-        // Возвращаем только URL сайтов в виде Set
-        Set<String> indexedSiteUrls = new HashSet<>();
-        for (searchengine.model.Site site : indexedSites) {
-            indexedSiteUrls.add(site.getUrl());
-        }
-
-        return indexedSiteUrls;
     }
 }

@@ -46,15 +46,6 @@ public class Page {
     @Transient
     private String text;
 
-    // Метод для извлечения заголовка из HTML контента
-    public String getTitle() {
-        if (content != null) {
-            Document doc = Jsoup.parse(content);
-            return doc.title(); // Извлекаем заголовок страницы из тега <title>
-        }
-        return null;
-    }
-
     // Метод для извлечения текста из HTML контента
     public String getText() {
         if (content != null) {
