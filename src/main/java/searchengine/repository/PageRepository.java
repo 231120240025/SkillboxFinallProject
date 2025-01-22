@@ -12,11 +12,6 @@ public interface PageRepository extends JpaRepository<Page, Integer> {
 
     @Modifying
     @Transactional
-    @Query("DELETE FROM Page p WHERE p.site.url = :siteUrl")  // Используем URL сайта
-    int deleteBySiteUrl(String siteUrl);
-
-    @Modifying
-    @Transactional
     @Query("DELETE FROM Page p WHERE p.site.id = :siteId")
     int deleteAllBySiteId(int siteId);
 
