@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 
 @RestController
 @RequestMapping("/api")
@@ -76,33 +77,30 @@ public class ApiController {
     public ResponseEntity<Map<String, Object>> indexPage(@RequestParam String url) {
         Map<String, Object> response = new HashMap<>();
 
-        // Проверка на пустой или null URL
         if (url == null || url.isEmpty()) {
-            response.put("result", false);
-            response.put("error", "URL страницы не указан");
-            logger.warn("URL is empty or null.");
-            return ResponseEntity.badRequest().body(response);
+            return pageIndexingService.createErrorResponse(response, "URL страницы не указан", HttpStatus.BAD_REQUEST);
         }
 
-        // Проверка, принадлежит ли URL указанным в конфигурации сайтам
         if (!pageIndexingService.isUrlWithinConfiguredSites(url)) {
-            response.put("result", false);
-            response.put("error", "Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
-            logger.warn("URL is not within the configured sites: {}", url);
-            return ResponseEntity.badRequest().body(response);
+            return pageIndexingService.createErrorResponse(
+                    response,
+                    "Данная страница находится за пределами сайтов, указанных в конфигурационном файле",
+                    HttpStatus.BAD_REQUEST
+            );
         }
 
-        // Попытка индексации страницы
         try {
             pageIndexingService.indexPage(url);
             response.put("result", true);
             logger.info("Successfully indexed page: {}", url);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            response.put("result", false);
-            response.put("error", "Ошибка при индексации страницы: " + e.getMessage());
             logger.error("Error indexing page: {}", url, e);
-            return ResponseEntity.status(500).body(response);
+            return pageIndexingService.createErrorResponse(
+                    response,
+                    "Ошибка при индексации страницы: " + e.getMessage(),
+                    HttpStatus.INTERNAL_SERVER_ERROR
+            );
         }
     }
 

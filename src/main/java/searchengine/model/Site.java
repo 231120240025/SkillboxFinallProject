@@ -29,7 +29,7 @@ public class Site {
     @Column(name = "status_time", nullable = false)
     private LocalDateTime statusTime;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(columnDefinition = "TEXT", nullable = true) // Обновлено для возможности null значений
     private String lastError;
 
     @Column(length = 500, nullable = false, unique = true)
