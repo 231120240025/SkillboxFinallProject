@@ -1,5 +1,9 @@
 package searchengine.services;
 
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +16,7 @@ import searchengine.config.ConfigSite;
 
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -46,10 +51,25 @@ public class PageIndexingService {
 
         try {
             logger.info("Начинаем индексацию страницы: {}", url);
-            Thread.sleep(2000);
+            Document document = Jsoup.connect(url).get();  // Скачиваем HTML контент страницы
+            String title = document.title();  // Извлекаем заголовок страницы
+            String text = document.body().text();  // Извлекаем текст из тела страницы
+            Elements links = document.select("a[href]");  // Извлекаем все ссылки на странице
+
+            // Логируем информацию о странице
+            logger.info("Заголовок страницы: {}", title);
+            logger.info("Текст страницы: {}", text);
+
+            // Обрабатываем найденные ссылки (например, добавляем их для индексации)
+            for (Element link : links) {
+                String linkUrl = link.absUrl("href");  // Получаем абсолютный URL
+                logger.info("Найденная ссылка: {}", linkUrl);
+                // Можно добавить дополнительную логику для обработки найденных ссылок
+            }
+
             logger.info("Успешно проиндексирована страница: {}", url);
-        } catch (Exception e) {
-            logger.error("Ошибка индексации страницы: {}", url, e);
+        } catch (IOException e) {
+            logger.error("Ошибка при скачивании или парсинге страницы: {}", url, e);
         }
     }
 
