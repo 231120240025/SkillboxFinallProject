@@ -67,9 +67,15 @@ public class PageIndexingService {
         }
 
         visitedUrls.clear();
-        crawlPage(site, url, 1);  // Начинаем обход страниц
-        updateSiteStatus(site);  // Обновляем статус на INDEXED после завершения обхода
+        try {
+            crawlPage(site, url, 1);  // Начинаем обход страниц
+            updateSiteStatus(site);  // Обновляем статус на INDEXED после завершения обхода
+        } catch (Exception e) {
+            // Если возникла ошибка, изменяем статус на FAILED и записываем ошибку
+            updateSiteStatusFailed(site, "Ошибка индексации: " + e.getMessage());
+        }
     }
+
 
 
     private void crawlPage(Site site, String url, int depth) throws Exception {
@@ -103,6 +109,7 @@ public class PageIndexingService {
                             crawlPage(site, href, depth + 1); // Рекурсивный обход
                         } catch (Exception e) {
                             logger.error("Ошибка при обработке URL: {}", href, e);
+                            updateSiteStatusFailed(site, "Ошибка индексации страницы: " + href);
                         }
                     }
                 });
@@ -117,6 +124,7 @@ public class PageIndexingService {
             throw new Exception("Ошибка получения содержимого страницы: " + e.getMessage(), e);
         }
     }
+
 
     private void updateSiteStatusTime(Site site) {
         site.setStatusTime(LocalDateTime.now());
@@ -272,4 +280,5 @@ public class PageIndexingService {
         siteRepository.save(site);  // Сохраняем изменения в репозитории
         logger.error("Ошибка индексации сайта {}: {}", site.getUrl(), errorMessage);
     }
+
 }
