@@ -47,10 +47,12 @@ public class PageIndexingService {
     }
 
     public void indexSite(String baseUrl) throws Exception {
+        // Проверяем, входит ли URL в список настроенных сайтов
         if (!isUrlWithinConfiguredSites(baseUrl)) {
             throw new Exception("URL не принадлежит к списку настроенных сайтов: " + baseUrl);
         }
 
+        // Проверяем, существует ли сайт в базе данных
         Site site = siteRepository.findByUrl(baseUrl);
         if (site == null) {
             site = new Site();
@@ -77,6 +79,7 @@ public class PageIndexingService {
             try {
                 System.out.println("Обрабатываю страницу: " + currentUrl);  // Информация о текущем URL
 
+                // Выполняем запрос к текущей странице
                 Connection.Response response = Jsoup.connect(currentUrl).ignoreContentType(true).execute();
                 String contentType = response.contentType();
 
@@ -85,7 +88,7 @@ public class PageIndexingService {
                     savePageContent(response, currentUrl, site);
                 }
 
-                // Извлечение ссылок только для HTML-страниц
+                // Извлекаем ссылки только для HTML-страниц
                 if (contentType != null && contentType.startsWith("text/html")) {
                     Document document = response.parse();
                     Elements links = document.select("a[href]");
@@ -106,11 +109,13 @@ public class PageIndexingService {
                 System.err.println("Ошибка загрузки страницы: " + currentUrl + " - " + e.getMessage());
             }
 
-            // Обновляем статус времени после обработки каждой страницы
+            // Обновляем статус времени после обработки каждой страницы (даже если страница не была успешно загружена)
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
+            System.out.println("Обновление времени в базе данных: " + LocalDateTime.now()); // Логирование обновления времени
         }
 
+        // Завершаем индексацию
         site.setStatus(IndexingStatus.INDEXED);
         site.setStatusTime(LocalDateTime.now());
         siteRepository.save(site);
