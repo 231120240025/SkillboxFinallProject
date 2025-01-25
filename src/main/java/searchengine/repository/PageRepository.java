@@ -19,11 +19,4 @@ public interface PageRepository extends JpaRepository<Page, Integer> {
 
     @Query("SELECT COUNT(p) > 0 FROM Page p WHERE p.path = :path AND p.site.id = :siteId")
     boolean existsByPathAndSiteId(String path, int siteId);
-
-    @Query("SELECT p FROM Page p WHERE p.path = :path AND p.site.id = :siteId")
-    Optional<Page> findBySiteAndPath(int siteId, String path);
-
-
-
-
 }
