@@ -90,7 +90,7 @@ public class ApiController {
         }
 
         try {
-            pageIndexingService.indexPage(url);
+            pageIndexingService.indexSite(url);
             response.put("result", true);
             logger.info("Страница успешно проиндексирована: {}", url);
             return ResponseEntity.ok(response);
