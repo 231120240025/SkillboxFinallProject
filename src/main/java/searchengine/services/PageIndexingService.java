@@ -17,7 +17,7 @@ import searchengine.repository.SiteRepository;
 import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
 import org.springframework.beans.factory.annotation.Autowired;
-
+import java.util.Random;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -47,7 +47,6 @@ public class PageIndexingService {
         return false;
     }
 
-    // Полный обход сайта
     public void indexSite(String baseUrl) throws Exception {
         if (!isUrlWithinConfiguredSites(baseUrl)) {
             throw new Exception("URL не принадлежит к списку настроенных сайтов: " + baseUrl);
@@ -66,6 +65,8 @@ public class PageIndexingService {
         Set<String> visitedUrls = new HashSet<>();
         Queue<String> queue = new LinkedList<>();
         queue.add(baseUrl);
+
+        Random random = new Random();
 
         while (!queue.isEmpty()) {
             String currentUrl = queue.poll();
@@ -86,9 +87,18 @@ public class PageIndexingService {
                         queue.add(absUrl);
                     }
                 }
+
+                // Добавляем случайную задержку между запросами (от 0,5 до 5 секунд)
+                int delay = random.nextInt(4500) + 500; // Генерирует значение от 500 до 5000 миллисекунд
+                Thread.sleep(delay);
+
             } catch (IOException e) {
                 System.err.println("Ошибка загрузки страницы: " + currentUrl + " - " + e.getMessage());
             }
+
+            // Обновляем статус времени после обработки каждой страницы
+            site.setStatusTime(LocalDateTime.now());
+            siteRepository.save(site);
         }
 
         site.setStatus(IndexingStatus.INDEXED);
@@ -98,13 +108,15 @@ public class PageIndexingService {
         System.out.println("Индексация сайта завершена: " + baseUrl);
     }
 
+
     private void savePage(Document document, String url, Site site) {
         try {
             Connection.Response response = Jsoup.connect(url).ignoreContentType(true).execute();
             String contentType = response.contentType();
 
             // Проверяем поддерживаемый тип контента
-            if (contentType == null || !contentType.startsWith("text/")) {
+            if (contentType == null || !contentType.startsWith("text/") && !contentType.startsWith("application/xml") && !contentType.startsWith("application/*+xml")) {
+                // Пропускаем неподдерживаемые типы контента (например, PDF, изображения и т.д.)
                 System.out.println("Неподдерживаемый тип контента: " + contentType + " для URL: " + url);
                 return;
             }
@@ -129,6 +141,7 @@ public class PageIndexingService {
             System.err.println("Ошибка загрузки страницы: " + url + " - " + e.getMessage());
         }
     }
+
 
     // Метод для создания ошибки
     public ResponseEntity<Map<String, Object>> createErrorResponse(
