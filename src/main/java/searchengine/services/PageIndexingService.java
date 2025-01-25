@@ -14,7 +14,8 @@ import searchengine.model.Site;
 import searchengine.model.IndexingStatus;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
-
+import org.jsoup.Connection;
+import org.jsoup.HttpStatusException;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.IOException;
@@ -97,22 +98,36 @@ public class PageIndexingService {
         System.out.println("Индексация сайта завершена: " + baseUrl);
     }
 
-    // Сохранение страницы в базу данных
     private void savePage(Document document, String url, Site site) {
-        String content = document.html();
-        String path = getPathFromUrl(url);
-        int statusCode = 200; // Здесь можно получить реальный HTTP-статус
+        try {
+            Connection.Response response = Jsoup.connect(url).ignoreContentType(true).execute();
+            String contentType = response.contentType();
 
-        Page page = new Page();
-        page.setSite(site);
-        page.setPath(path);
-        page.setCode(statusCode);
-        page.setContent(content);
-        page.setContentType("text/html");
-        page.setStatus(IndexingStatus.INDEXED);
+            // Проверяем поддерживаемый тип контента
+            if (contentType == null || !contentType.startsWith("text/")) {
+                System.out.println("Неподдерживаемый тип контента: " + contentType + " для URL: " + url);
+                return;
+            }
 
-        pageRepository.save(page);
-        System.out.println("Сохранена страница: " + url);
+            String content = response.body();
+            String path = getPathFromUrl(url);
+            int statusCode = response.statusCode();
+
+            Page page = new Page();
+            page.setSite(site);
+            page.setPath(path);
+            page.setCode(statusCode);
+            page.setContent(content);
+            page.setContentType(contentType);
+            page.setStatus(IndexingStatus.INDEXED);
+
+            pageRepository.save(page);
+            System.out.println("Сохранена страница: " + url);
+        } catch (HttpStatusException e) {
+            System.err.println("HTTP ошибка при загрузке страницы: " + url + " - " + e.getMessage());
+        } catch (IOException e) {
+            System.err.println("Ошибка загрузки страницы: " + url + " - " + e.getMessage());
+        }
     }
 
     // Метод для создания ошибки
