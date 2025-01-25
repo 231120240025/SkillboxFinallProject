@@ -76,6 +76,8 @@ public class PageIndexingService {
             visitedUrls.add(currentUrl);
 
             try {
+                System.out.println("Обрабатываю страницу: " + currentUrl);  // Информация о текущем URL
+
                 Document document = Jsoup.connect(currentUrl).get();
                 savePage(document, currentUrl, site);
 
@@ -90,6 +92,7 @@ public class PageIndexingService {
 
                 // Добавляем случайную задержку между запросами (от 0,5 до 5 секунд)
                 int delay = random.nextInt(4500) + 500; // Генерирует значение от 500 до 5000 миллисекунд
+                System.out.println("Задержка перед следующим запросом: " + delay + " миллисекунд.");
                 Thread.sleep(delay);
 
             } catch (IOException e) {
@@ -108,9 +111,10 @@ public class PageIndexingService {
         System.out.println("Индексация сайта завершена: " + baseUrl);
     }
 
-
     private void savePage(Document document, String url, Site site) {
         try {
+            System.out.println("Сохранение страницы: " + url);  // Логирование информации о сохранении страницы
+
             Connection.Response response = Jsoup.connect(url).ignoreContentType(true).execute();
             String contentType = response.contentType();
 
@@ -134,7 +138,7 @@ public class PageIndexingService {
             page.setStatus(IndexingStatus.INDEXED);
 
             pageRepository.save(page);
-            System.out.println("Сохранена страница: " + url);
+            System.out.println("Страница сохранена: " + url);  // Уведомление о сохранении страницы
         } catch (HttpStatusException e) {
             System.err.println("HTTP ошибка при загрузке страницы: " + url + " - " + e.getMessage());
         } catch (IOException e) {
