@@ -15,7 +15,6 @@ import searchengine.model.IndexingStatus;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 import org.jsoup.Connection;
-import org.jsoup.HttpStatusException;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.util.Random;
 import java.io.IOException;
@@ -78,15 +77,23 @@ public class PageIndexingService {
             try {
                 System.out.println("Обрабатываю страницу: " + currentUrl);  // Информация о текущем URL
 
-                Document document = Jsoup.connect(currentUrl).get();
-                savePage(document, currentUrl, site);
+                Connection.Response response = Jsoup.connect(currentUrl).ignoreContentType(true).execute();
+                String contentType = response.contentType();
 
-                // Извлечение всех ссылок со страницы
-                Elements links = document.select("a[href]");
-                for (Element link : links) {
-                    String absUrl = link.attr("abs:href");
-                    if (absUrl.startsWith(baseUrl) && !visitedUrls.contains(absUrl)) {
-                        queue.add(absUrl);
+                // Сохраняем страницы HTML и изображения (JPG, PNG и т.д.)
+                if (isSupportedContentType(currentUrl, contentType)) {
+                    savePageContent(response, currentUrl, site);
+                }
+
+                // Извлечение ссылок только для HTML-страниц
+                if (contentType != null && contentType.startsWith("text/html")) {
+                    Document document = response.parse();
+                    Elements links = document.select("a[href]");
+                    for (Element link : links) {
+                        String absUrl = link.attr("abs:href");
+                        if (absUrl.startsWith(baseUrl) && !visitedUrls.contains(absUrl)) {
+                            queue.add(absUrl);
+                        }
                     }
                 }
 
@@ -111,21 +118,10 @@ public class PageIndexingService {
         System.out.println("Индексация сайта завершена: " + baseUrl);
     }
 
-    private void savePage(Document document, String url, Site site) {
+    private void savePageContent(Connection.Response response, String url, Site site) {
         try {
-            System.out.println("Сохранение страницы: " + url);  // Логирование информации о сохранении страницы
-
-            Connection.Response response = Jsoup.connect(url).ignoreContentType(true).execute();
-            String contentType = response.contentType();
-
-            // Проверяем поддерживаемый тип контента
-            if (contentType == null || !contentType.startsWith("text/") && !contentType.startsWith("application/xml") && !contentType.startsWith("application/*+xml")) {
-                // Пропускаем неподдерживаемые типы контента (например, PDF, изображения и т.д.)
-                System.out.println("Неподдерживаемый тип контента: " + contentType + " для URL: " + url);
-                return;
-            }
-
             String content = response.body();
+            String contentType = response.contentType();
             String path = getPathFromUrl(url);
             int statusCode = response.statusCode();
 
@@ -138,12 +134,23 @@ public class PageIndexingService {
             page.setStatus(IndexingStatus.INDEXED);
 
             pageRepository.save(page);
-            System.out.println("Страница сохранена: " + url);  // Уведомление о сохранении страницы
-        } catch (HttpStatusException e) {
-            System.err.println("HTTP ошибка при загрузке страницы: " + url + " - " + e.getMessage());
-        } catch (IOException e) {
-            System.err.println("Ошибка загрузки страницы: " + url + " - " + e.getMessage());
+            System.out.println("Сохранено содержимое: " + url);
+        } catch (Exception e) {
+            System.err.println("Ошибка сохранения содержимого: " + url + " - " + e.getMessage());
         }
+    }
+
+    private boolean isSupportedContentType(String url, String contentType) {
+        if (contentType == null) return false;
+
+        // Поддерживаем текстовые и HTML страницы, изображения
+        if (contentType.startsWith("text/") ||
+                contentType.startsWith("application/xml") ||
+                contentType.startsWith("image/")) {
+            return true;
+        }
+
+        return false;
     }
 
 
