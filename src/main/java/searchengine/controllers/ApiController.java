@@ -92,10 +92,10 @@ public class ApiController {
         try {
             pageIndexingService.indexPage(url);
             response.put("result", true);
-            logger.info("Successfully indexed page: {}", url);
+            logger.info("Страница успешно проиндексирована: {}", url);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            logger.error("Error indexing page: {}", url, e);
+            logger.error("Ошибка индексации страницы: {}", url, e);
             return pageIndexingService.createErrorResponse(
                     response,
                     "Ошибка при индексации страницы: " + e.getMessage(),
