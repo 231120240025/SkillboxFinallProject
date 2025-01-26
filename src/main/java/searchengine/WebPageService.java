@@ -13,10 +13,16 @@ import searchengine.model.Site;
 import searchengine.model.IndexingStatus;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
+import java.util.stream.Collectors;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
+
+import org.apache.lucene.morphology.LuceneMorphology;
+import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
+import org.apache.lucene.morphology.english.EnglishLuceneMorphology;
+import java.util.*;
 
 @SpringBootApplication
 public class WebPageService implements CommandLineRunner {
@@ -30,8 +36,12 @@ public class WebPageService implements CommandLineRunner {
     @Autowired
     private SiteRepository siteRepository;
 
-    public void fetchHtmlFromSites() {
+    public void fetchHtmlFromSites() throws IOException {  // Добавлен throws IOException
         List<ConfigSite> sites = sitesList.getSites();
+
+        // Инициализация морфологий
+        LuceneMorphology russianMorphology = new RussianLuceneMorphology();
+        LuceneMorphology englishMorphology = new EnglishLuceneMorphology();
 
         if (sites != null) {
             for (ConfigSite siteConfig : sites) {
@@ -43,6 +53,10 @@ public class WebPageService implements CommandLineRunner {
                     System.out.println("HTML контент получен с: " + siteConfig.getUrl());
                     // Выводим первые 500 символов HTML контента для удобства
                     System.out.println("HTML (первые 500 символов): " + (htmlContent.length() > 500 ? htmlContent.substring(0, 500) : htmlContent));
+
+                    // Лемматизация контента страницы
+                    Map<String, Integer> lemmatizedWords = lemmatizeText(htmlContent, "russian", russianMorphology); // Используйте "english" для английского текста
+                    System.out.println("Леммы и их количество: " + lemmatizedWords);
 
                     // Проверяем, существует ли сайт в базе данных
                     Site site = siteRepository.findByUrl(siteConfig.getUrl());
@@ -69,12 +83,53 @@ public class WebPageService implements CommandLineRunner {
                     System.out.println("Страница для " + siteConfig.getUrl() + " успешно сохранена.");
 
                 } catch (IOException e) {
-                    System.out.println("Ошибка при загрузке страницы: " + siteConfig.getUrl());
-                    e.printStackTrace();
+                    // Логируем ошибку с подробностями
+                    System.err.println("Ошибка при загрузке страницы: " + siteConfig.getUrl());
+                    e.printStackTrace(); // Печатаем стек ошибки для диагностики
                 }
             }
         }
     }
+
+    // Метод для лемматизации текста
+    public static Map<String, Integer> lemmatizeText(String text, String language, LuceneMorphology morphology) {
+        List<String> tokens = tokenize(text, language);
+        Map<String, Integer> lemmaCountMap = new HashMap<>();
+
+        for (String token : tokens) {
+            String lemma = getLemma(token, morphology);
+            if (lemma != null) {
+                lemmaCountMap.put(lemma, lemmaCountMap.getOrDefault(lemma, 0) + 1);
+            }
+        }
+        return lemmaCountMap;
+    }
+
+    private static List<String> tokenize(String text, String language) {
+        // Регулярное выражение для кириллических символов
+        String regex = language.equals("russian") ? "[А-Яа-я]+" : "[A-Za-z]+";
+
+        // Токенизация текста и фильтрация только кириллических слов
+        return Arrays.stream(text.split("\\s+"))
+                .filter(word -> word.matches(regex)) // Фильтрация только кириллических слов
+                .collect(Collectors.toList());
+    }
+
+    private static String getLemma(String word, LuceneMorphology morphology) {
+        try {
+            // Приводим слово к нижнему регистру
+            word = word.toLowerCase();
+
+            List<String> lemmas = morphology.getNormalForms(word);
+            if (!lemmas.isEmpty()) {
+                return lemmas.get(0);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
 
     @Override
     public void run(String... args) throws Exception {
