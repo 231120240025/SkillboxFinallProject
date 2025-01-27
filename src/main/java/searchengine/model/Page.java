@@ -28,6 +28,7 @@ public class Page {
     @Column(length = 500, nullable = false) // Increase length to accommodate longer paths
     private String path;
 
+
     @Column(nullable = false)
     private int code;
 
@@ -45,10 +46,7 @@ public class Page {
     @Transient
     private String text;
 
-    // Добавляем поле для статуса
-    @Enumerated(EnumType.STRING)  // Устанавливаем, чтобы сохранялся строковый вариант статуса
-    @Column(nullable = false)
-    private IndexingStatus status;  // Статус индексации страницы
+
 
     // Метод для извлечения текста из HTML контента
     public String getText() {

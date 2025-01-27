@@ -29,7 +29,7 @@ public class Site {
     @Column(name = "status_time", nullable = false)
     private LocalDateTime statusTime;
 
-    @Column(columnDefinition = "TEXT", nullable = true) // Обновлено для возможности null значений
+    @Column(columnDefinition = "TEXT")
     private String lastError;
 
     @Column(length = 500, nullable = false, unique = true)
@@ -40,4 +40,32 @@ public class Site {
 
     @OneToMany(mappedBy = "site", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Page> pages = new ArrayList<>();
+
+    public void addPage(Page page) {
+        pages.add(page);
+        page.setSite(this);
+    }
+
+    public void removePage(Page page) {
+        pages.remove(page);
+        page.setSite(null);
+    }
+
+    public void clearPages() {
+        for (Page page : new ArrayList<>(pages)) {
+            removePage(page);
+        }
+    }
+
+    // Helper method for updating the status, status time, and error message
+    public void updateStatus(IndexingStatus newStatus, String errorMessage) {
+        this.status = newStatus;
+        this.statusTime = LocalDateTime.now();
+        this.lastError = errorMessage;
+    }
+
+    // Helper method to check if the site is currently being indexed
+    public boolean isIndexing() {
+        return this.status == IndexingStatus.INDEXING;
+    }
 }

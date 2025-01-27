@@ -136,7 +136,6 @@ public class PageIndexingService {
             page.setCode(statusCode);
             page.setContent(content);
             page.setContentType(contentType);
-            page.setStatus(IndexingStatus.INDEXED);
 
             pageRepository.save(page);
             System.out.println("Сохранено содержимое: " + url);
@@ -144,6 +143,7 @@ public class PageIndexingService {
             System.err.println("Ошибка сохранения содержимого: " + url + " - " + e.getMessage());
         }
     }
+
 
     private boolean isSupportedContentType(String url, String contentType) {
         if (contentType == null) return false;
