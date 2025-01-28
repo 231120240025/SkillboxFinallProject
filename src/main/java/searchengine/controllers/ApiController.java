@@ -74,8 +74,21 @@ public class ApiController {
     }
 
     @PostMapping(value = "/indexPage", consumes = "application/x-www-form-urlencoded")
-    public ResponseEntity<Map<String, Object>> indexPage(@RequestParam String url) {
+    public ResponseEntity<Map<String, Object>> indexPage(@RequestParam String url,
+                                                         @RequestParam(required = false, defaultValue = "3") int depth) { // depth с дефолтным значением 3
         Map<String, Object> response = new HashMap<>();
+
+        // Максимальная допустимая глубина
+        int maxDepth = 3;
+
+        // Проверяем, что глубина не превышает максимальную
+        if (depth > maxDepth) {
+            return pageIndexingService.createErrorResponse(
+                    response,
+                    "Глубина индексации не может превышать " + maxDepth,
+                    HttpStatus.BAD_REQUEST
+            );
+        }
 
         if (url == null || url.isEmpty()) {
             return pageIndexingService.createErrorResponse(response, "URL страницы не указан", HttpStatus.BAD_REQUEST);
@@ -90,7 +103,7 @@ public class ApiController {
         }
 
         try {
-            pageIndexingService.indexSite(url);
+            pageIndexingService.indexSite(url, depth); // передаем глубину в метод
             response.put("result", true);
             logger.info("Страница успешно проиндексирована: {}", url);
             return ResponseEntity.ok(response);
@@ -103,4 +116,6 @@ public class ApiController {
             );
         }
     }
+
+
 }

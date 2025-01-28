@@ -46,7 +46,7 @@ public class PageIndexingService {
         return false;
     }
 
-    public void indexSite(String baseUrl) throws Exception {
+    public void indexSite(String baseUrl, int maxDepth) throws Exception {
         // Проверяем, входит ли URL в список настроенных сайтов
         if (!isUrlWithinConfiguredSites(baseUrl)) {
             throw new Exception("URL не принадлежит к списку настроенных сайтов: " + baseUrl);
@@ -64,20 +64,23 @@ public class PageIndexingService {
         }
 
         Set<String> visitedUrls = new HashSet<>();
-        Queue<String> queue = new LinkedList<>();
-        queue.add(baseUrl);
+        Queue<UrlDepthPair> queue = new LinkedList<>();
+        queue.add(new UrlDepthPair(baseUrl, 0)); // Начальная пара URL и глубина 0
 
         Random random = new Random();
 
         while (!queue.isEmpty()) {
-            String currentUrl = queue.poll();
-            if (visitedUrls.contains(currentUrl)) {
+            UrlDepthPair current = queue.poll();
+            String currentUrl = current.getUrl();
+            int currentDepth = current.getDepth();
+
+            if (visitedUrls.contains(currentUrl) || currentDepth >= maxDepth) {
                 continue;
             }
             visitedUrls.add(currentUrl);
 
             try {
-                System.out.println("Обрабатываю страницу: " + currentUrl);  // Информация о текущем URL
+                System.out.println("Обрабатываю страницу на глубине " + currentDepth + ": " + currentUrl);
 
                 // Выполняем запрос к текущей странице
                 Connection.Response response = Jsoup.connect(currentUrl).ignoreContentType(true).execute();
@@ -95,7 +98,7 @@ public class PageIndexingService {
                     for (Element link : links) {
                         String absUrl = link.attr("abs:href");
                         if (absUrl.startsWith(baseUrl) && !visitedUrls.contains(absUrl)) {
-                            queue.add(absUrl);
+                            queue.add(new UrlDepthPair(absUrl, currentDepth + 1)); // Увеличиваем глубину
                         }
                     }
                 }
@@ -130,6 +133,13 @@ public class PageIndexingService {
             String path = getPathFromUrl(url);
             int statusCode = response.statusCode();
 
+            // Проверка, существует ли уже такая страница для данного сайта
+            Optional<Page> existingPage = pageRepository.findBySiteAndPath(site, path);
+            if (existingPage.isPresent()) {
+                System.out.println("Страница уже существует: " + url);
+                return; // Не сохраняем, если такая страница уже есть
+            }
+
             Page page = new Page();
             page.setSite(site);
             page.setPath(path);
@@ -158,7 +168,6 @@ public class PageIndexingService {
         return false;
     }
 
-
     // Метод для создания ошибки
     public ResponseEntity<Map<String, Object>> createErrorResponse(
             Map<String, Object> response,
@@ -176,6 +185,25 @@ public class PageIndexingService {
             return new java.net.URL(url).getPath();
         } catch (Exception e) {
             return "/";
+        }
+    }
+
+    // Класс для хранения URL и глубины
+    private static class UrlDepthPair {
+        private final String url;
+        private final int depth;
+
+        public UrlDepthPair(String url, int depth) {
+            this.url = url;
+            this.depth = depth;
+        }
+
+        public String getUrl() {
+            return url;
+        }
+
+        public int getDepth() {
+            return depth;
         }
     }
 }
