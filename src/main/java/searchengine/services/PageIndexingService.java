@@ -170,15 +170,6 @@ public class PageIndexingService {
         return new ResponseEntity<>(response, status);
     }
 
-    // Метод для получения базового URL
-    private String getBaseUrl(String url) {
-        try {
-            return new java.net.URL(url).getProtocol() + "://" + new java.net.URL(url).getHost();
-        } catch (Exception e) {
-            return url;
-        }
-    }
-
     // Метод для извлечения пути из URL
     private String getPathFromUrl(String url) {
         try {
