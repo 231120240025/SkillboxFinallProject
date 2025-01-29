@@ -22,9 +22,15 @@ import java.time.LocalDateTime;
 import java.util.*;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
 
 @Service
 public class PageIndexingService {
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
@@ -48,6 +54,7 @@ public class PageIndexingService {
         return false;
     }
 
+    @Transactional
     public void indexSite(String baseUrl, int maxDepth) throws Exception {
         // Проверяем, входит ли URL в список настроенных сайтов
         if (!isUrlWithinConfiguredSites(baseUrl)) {
@@ -219,14 +226,26 @@ public class PageIndexingService {
             boolean isActive = TransactionSynchronizationManager.isActualTransactionActive();
             System.out.println("Транзакция активна: " + isActive);
 
+            // Подсчёт страниц перед удалением
             long pagesCount = pageRepository.countBySite(site);
-            pageRepository.deleteAllBySite(site);
-            siteRepository.delete(site);
+            System.out.println("Удаляется " + pagesCount + " страниц с сайта: " + site.getUrl());
 
-            System.out.println("Удалены данные для сайта: " + site.getUrl());
-            System.out.println("Удалено страниц: " + pagesCount);
+            // Удаляем страницы с использованием каскадного удаления, если это настроено
+            pageRepository.deleteAllBySite(site);
+
+            // Логируем информацию
+            System.out.println("Удалены страницы для сайта: " + site.getUrl());
+
+            // Удаляем сайт
+            siteRepository.delete(site);
+            entityManager.flush(); // Является обязательным для очистки всех каскадных операций
+
+            // Detach the site entity explicitly
+            entityManager.detach(site);
+
+            // Логирование
+            System.out.println("Удалён сайт с URL: " + site.getUrl());
         }
     }
-
 
 }
