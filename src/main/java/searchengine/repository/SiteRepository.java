@@ -4,8 +4,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import searchengine.model.Site;
 import searchengine.model.IndexingStatus;
-
+import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import org.springframework.data.jpa.repository.Modifying;
 
 @Repository
 public interface SiteRepository extends JpaRepository<Site, Integer> {
@@ -16,4 +17,7 @@ public interface SiteRepository extends JpaRepository<Site, Integer> {
     List<Site> findAllByStatus(IndexingStatus status);
 
 
+    @Modifying
+    @Transactional
+    void delete(Site site);
 }

@@ -20,6 +20,8 @@ import java.util.Random;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class PageIndexingService {
@@ -54,14 +56,18 @@ public class PageIndexingService {
 
         // Проверяем, существует ли сайт в базе данных
         Site site = siteRepository.findByUrl(baseUrl);
-        if (site == null) {
-            site = new Site();
-            site.setUrl(baseUrl);
-            site.setName(baseUrl); // Можно заменить на реальное имя сайта
-            site.setStatus(IndexingStatus.INDEXING);
-            site.setStatusTime(LocalDateTime.now());
-            siteRepository.save(site);
+        if (site != null) {
+            // Удаляем старые данные, если сайт уже существует
+            deleteSiteData(site);
         }
+
+        // Создаем новый сайт для индексации
+        site = new Site();
+        site.setUrl(baseUrl);
+        site.setName(baseUrl); // Можно заменить на реальное имя сайта
+        site.setStatus(IndexingStatus.INDEXING);
+        site.setStatusTime(LocalDateTime.now());
+        siteRepository.save(site);
 
         Set<String> visitedUrls = new HashSet<>();
         Queue<UrlDepthPair> queue = new LinkedList<>();
@@ -206,4 +212,21 @@ public class PageIndexingService {
             return depth;
         }
     }
+
+    @Transactional
+    private void deleteSiteData(Site site) {
+        if (site != null) {
+            boolean isActive = TransactionSynchronizationManager.isActualTransactionActive();
+            System.out.println("Транзакция активна: " + isActive);
+
+            long pagesCount = pageRepository.countBySite(site);
+            pageRepository.deleteAllBySite(site);
+            siteRepository.delete(site);
+
+            System.out.println("Удалены данные для сайта: " + site.getUrl());
+            System.out.println("Удалено страниц: " + pagesCount);
+        }
+    }
+
+
 }
