@@ -25,7 +25,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
-
 @Service
 public class PageIndexingService {
 
