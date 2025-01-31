@@ -1,5 +1,8 @@
 package searchengine;
 
+import org.apache.lucene.morphology.LuceneMorphology;
+import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
+import org.apache.lucene.morphology.english.EnglishLuceneMorphology;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
@@ -10,16 +13,23 @@ import searchengine.config.SitesList;
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.model.IndexingStatus;
+import searchengine.model.Lemma;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
-import java.time.LocalDateTime;
+import searchengine.repository.LemmaRepository;
+import org.jsoup.Jsoup;  // Добавь в импорты, если используешь Jsoup
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.Scanner;
 import java.util.stream.Collectors;
 
 @SpringBootApplication
@@ -30,12 +40,21 @@ public class HtmlFetcher implements CommandLineRunner {
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
+    private final LemmaRepository lemmaRepository;
+
+    private LuceneMorphology russianMorphology;
+    private LuceneMorphology englishMorphology;
 
     @Autowired
-    public HtmlFetcher(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository) {
+    public HtmlFetcher(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository, LemmaRepository lemmaRepository) throws IOException {
         this.sitesList = sitesList;
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
+        this.lemmaRepository = lemmaRepository;
+
+        // Инициализация лемматизаторов для русского и английского языков
+        russianMorphology = new RussianLuceneMorphology();
+        englishMorphology = new EnglishLuceneMorphology();
     }
 
     public void fetchAll() {
@@ -70,8 +89,8 @@ public class HtmlFetcher implements CommandLineRunner {
             return;
         }
 
-        // Логируем результат загрузки HTML
-        logger.info("✅ HTML успешно загружен для сайта: {}", siteConfig.getUrl());
+        // Логируем HTML (первые 1000 символов)
+        logger.info("📄 HTML загружен (фрагмент): \n{}", truncateHtml(html, 1000));
 
         Site savedSite = saveSiteIfNeeded(siteConfig);
 
@@ -82,7 +101,6 @@ public class HtmlFetcher implements CommandLineRunner {
             logger.warn("⚠️ Не удалось сохранить сайт: {}", siteConfig.getUrl());
         }
     }
-
 
 
     private String fetchHtml(String siteUrl) {
@@ -117,9 +135,6 @@ public class HtmlFetcher implements CommandLineRunner {
         return html;
     }
 
-
-
-
     private Site saveSiteIfNeeded(searchengine.config.ConfigSite siteConfig) {
         // Ищем сайт по URL
         Site existingSite = siteRepository.findByUrl(siteConfig.getUrl());
@@ -140,15 +155,67 @@ public class HtmlFetcher implements CommandLineRunner {
 
     private void savePage(Site site, String html) {
         logger.debug("💾 Сохраняю страницу для сайта: {}", site.getUrl());
+
         Page page = new Page();
         page.setSite(site);
-        page.setPath("");  // Укажите путь к странице, если нужно
+        page.setPath("");
         page.setContent(html);
-        page.setCode(200);  // Статус код 200 (ОК)
+        page.setCode(200);
         pageRepository.save(page);
 
-        // Log saved content without truncation
-        logger.debug("✅ Страница успешно сохранена для сайта: {}\nСодержимое страницы:\n{}", site.getUrl(), html);
+        // Лемматизация
+        Map<String, Integer> lemmaCounts = getLemmas(html);
+
+        // Логируем леммы перед сохранением
+        logger.info("📌 Леммы для сайта {}: {}", site.getUrl(), lemmaCounts);
+
+        // Сохраняем леммы в БД
+        for (Map.Entry<String, Integer> entry : lemmaCounts.entrySet()) {
+            Lemma lemma = new Lemma();
+            lemma.setSite(site);
+            lemma.setLemma(entry.getKey());
+            lemma.setFrequency(entry.getValue());
+            lemmaRepository.save(lemma);
+        }
+
+        logger.debug("✅ Страница и леммы сохранены для сайта: {}", site.getUrl());
+    }
+
+    private Map<String, Integer> getLemmas(String html) {
+        Map<String, Integer> lemmaCounts = new HashMap<>();
+
+        // Удаляем HTML-теги перед анализом
+        String text = Jsoup.parse(html).text();
+
+        // Регулярное выражение для поиска слов
+        Pattern wordPattern = Pattern.compile("\\p{L}+");
+        Matcher matcher = wordPattern.matcher(text);
+
+        while (matcher.find()) {
+            String word = matcher.group().toLowerCase(); // Приводим к нижнему регистру
+
+            if (word.matches(".*[а-яА-ЯёЁ].*")) {
+                // Если слово содержит русские буквы, используем русский морфологический анализатор
+                try {
+                    List<String> normalForms = russianMorphology.getNormalForms(word);
+                    if (!normalForms.isEmpty()) {
+                        String lemma = normalForms.get(0);
+                        lemmaCounts.put(lemma, lemmaCounts.getOrDefault(lemma, 0) + 1);
+                    }
+                } catch (Exception ignored) {}
+            } else if (word.matches(".*[a-zA-Z].*")) {
+                // Если слово содержит латинские буквы, используем английский морфологический анализатор
+                try {
+                    List<String> normalForms = englishMorphology.getNormalForms(word);
+                    if (!normalForms.isEmpty()) {
+                        String lemma = normalForms.get(0);
+                        lemmaCounts.put(lemma, lemmaCounts.getOrDefault(lemma, 0) + 1);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        return lemmaCounts;
     }
 
     @Override
@@ -156,7 +223,6 @@ public class HtmlFetcher implements CommandLineRunner {
         logger.info("🚀 Приложение запущено!");
         fetchAll();
     }
-
 
     public static void main(String[] args) {
         SpringApplication.run(HtmlFetcher.class, args);
